@@ -26,9 +26,6 @@ namespace BROKER
 		cppkafka::Producer producer;
 
 		std::string topic;
-
-		std::unique_ptr<PARSER::Parser> parser;
-
 		std::mutex broker_mutex;
 
 	public:
@@ -37,8 +34,7 @@ namespace BROKER
 				{"metadata.broker.list", "localhost:9092"}
 			},
 			producer(config),
-			topic(topic),
-			parser(std::make_unique<PARSER::Parser>())
+			topic(topic)
 			{}
 
 		void post_message(const std::string& message);

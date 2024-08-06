@@ -11,6 +11,21 @@ namespace CONNECTION
 	    }
 	}
 
+	bool PGConnection::check_query(const std::string query)
+	{
+	    PGresult* temp_res = PQexec(conn.get(), query.c_str());
+
+	    if (PQresultStatus(temp_res) != PGRES_COMMAND_OK)
+	    {
+	        std::cout << "Error in query: " << PQerrorMessage(conn.get()) << std::endl;
+	        PQclear(temp_res);
+	        return false;
+	    }
+
+	    PQclear(temp_res);
+	    return true;
+	}
+
 	bool PGConnection::insert(const std::string data)
 	{
 		try
@@ -33,6 +48,31 @@ namespace CONNECTION
 	        std::cerr << "Exception: " << e.what() << std::endl;
 	        return false;
 	    }
+	}
+
+	bool PGConnection::remove(const std::string query)
+	{
+		try
+		{
+			PQsendQuery(this->conn.get(), query.c_str());
+
+			while(this->res = PQgetResult(this->conn.get()))
+			{
+				if(PQresultStatus(this->res) == PGRES_FATAL_ERROR)
+				{
+					std::cout << "[ERROR] " << PQresultErrorMessage(this->res) << std::endl;
+					return false;
+				}
+			}
+
+			return true;
+
+		}	
+		catch (const std::exception& e)
+		{
+	        std::cerr << "Exception: " << e.what() << std::endl;
+	        return false;
+		}
 	}
 
 	bool PGConnection::update(const std::string data)
@@ -80,15 +120,6 @@ namespace CONNECTION
 
 			int numRows = PQntuples(res);
 			int numCols = PQnfields(res);
-
-		    // for (int row = 0; row < numRows; ++row) 
-		    // {
-		    //     for (int col = 0; col < numCols; ++col) 
-		    //     {
-		    //         printf("%s\t", PQgetvalue(res, row, col));
-		    //     }
-		    //     printf("\n");
-		    // }
 
 			for(int row = 0; row < numRows; ++row)
 			{

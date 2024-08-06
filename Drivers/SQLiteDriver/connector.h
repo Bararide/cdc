@@ -11,9 +11,7 @@ namespace SQLITECONN
 	{
 	private:
 		std::string dbpath;
-
 		sqlite3* db;
-
 		char* errorMsg = nullptr;
 		int rc;
 
@@ -21,10 +19,10 @@ namespace SQLITECONN
 		Sqliteconn(std::string dbpath);
 
 		bool insert(const std::string data);
-
 		bool update(const std::string update_query);
 		bool remove(const std::string remove_query);
-		
+		bool check_query(const std::string query);
+
 		void post_logger_message(const std::string& request, bool status);
 
 		std::vector<std::string> select(const std::string select_query);

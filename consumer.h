@@ -2,6 +2,7 @@
 #define CONSUMER_H
 
 #include "parser.h"
+#include "Parsers/JsonParser.h"
 #include "Drivers/baseConnector.h"
 #include "Broker/broker.h"
 
@@ -12,20 +13,20 @@
 #include <nlohmann/json.hpp>
 #include <memory>
 
-#include <atomic>
-#include <mutex>
-#include <thread>
-
 #include <future>
 
 #include <map>
 
 namespace CONSUMER
 {
-	template<typename T, typename N>
+	template<typename T, typename L>
 	class Consumer
 	{
 	private:
+		bool replicate_in_database;
+
+		std::vector<std::thread> pool;
+
 		cppkafka::Configuration config;
 		cppkafka::Consumer consumer;
 
@@ -35,7 +36,7 @@ namespace CONSUMER
 
 		std::unique_ptr<PARSER::Parser> parser;
 		std::shared_ptr<CONNECTOR::BaseConnector<T>> conn;
-		std::shared_ptr<LOGGER::Logger<N>> logger;
+		std::shared_ptr<LOGGER::Logger<L>> logger;
 		std::shared_ptr<BROKER::Broker> broker;
 		std::shared_ptr<BROKER::Broker> servbroker;
 
@@ -50,67 +51,145 @@ namespace CONSUMER
             }}
         };
         
-		void delegate_message(int oper, const std::string& msg, const json& json_response)
-		{
+
+		void delegate_message(int oper, const std::string& msg, const json& json_response) {
 		    bool success = false;
 		    std::string log_prefix;
+
+		    std::future<void> async_task;
 
 		    switch (oper)
 		    {
 		        case 0:
+		        {
+		            std::cout << 0 << std::endl;
+		            if (replicate_in_database)
 		            {
-		            	std::cout << "0" << std::endl;
-		                std::vector<std::string> res = conn->select(msg);
-
-		                std::cout << res.empty() << std::endl;
-		                if (!res.empty())
+		                async_task = std::async(std::launch::async, [&](const std::string& msg, bool& success, std::string& log_prefix)
 		                {
-		                    success = true;
-		                    log_prefix = "[OKEY]";
-		                    json response;
+		                    auto select_future = std::async(std::launch::async, &CONNECTOR::BaseConnector<T>::select, conn, msg);
+		                    std::vector<std::string> res = select_future.get();
 
-		                    vecops["COLUMNS"](res, response);
-		                    res.clear();
+		                    if (!res.empty())
+		                    {
+		                        success = true;
+		                        log_prefix = "[OKEY]";
+		                        json response;
 
-		                    std::cout << response.dump(4) << std::endl;
+		                        vecops["COLUMNS"](res, response);
+		                        res.clear();
 
-		                    broker->post_message(response);
-		                } 
-		                else 
-		                {
-		                    log_prefix = "[ERROR]";
-		                }
-		                break;
+		                        std::cout << response.dump(4) << std::endl;
+
+		                        broker->post_message(response);
+		                    }
+		                    else
+		                    {
+		                        log_prefix = "[ERROR]";
+		                    }
+		                }, msg, std::ref(success), std::ref(log_prefix));
 		            }
+		            else
+		            {
+		                async_task = std::async(std::launch::async, [&](const std::string& msg, bool& success, std::string& log_prefix)
+		                {
+		                    auto res = std::async(std::launch::async, &CONNECTOR::BaseConnector<T>::template check_query<std::string>, conn, msg);
+		                    success  = res.get(); 
+		                    log_prefix = success ? "[OKEY]" : "[ERROR]";
+		                }, msg, std::ref(success), std::ref(log_prefix));
+		            }
+		            break;
+		        }
 		        case 1:
-		        	std::cout << "1" << std::endl;
-		            success = conn->update(msg);
-		            log_prefix = success ? "[OKEY]" : "[ERROR]";
+		        {
+		            if (replicate_in_database)
+		            {
+		                async_task = std::async(std::launch::async, [&](const std::string& msg, bool& success, std::string& log_prefix)
+		                {
+		                    auto logger_future = std::async(std::launch::async, &LOGGER::Logger<L>::add_info_message, logger, "replicate update query");
+		                    auto res           = std::async(std::launch::async, &CONNECTOR::BaseConnector<T>::template update<std::string>, conn, msg);
+		                    success = res.get();
+		                    logger_future.get();
+		                    log_prefix = success ? "[OKEY]" : "[ERROR]";
+		                }, msg, std::ref(success), std::ref(log_prefix));
+		            }
+		            else
+		            {
+		                async_task = std::async(std::launch::async, [&](const std::string& msg, bool& success, std::string& log_prefix)
+		                {
+		                    auto logger_future = std::async(std::launch::async, &LOGGER::Logger<L>::add_info_message, logger, "check update query");
+		                    auto res           = std::async(std::launch::async, &CONNECTOR::BaseConnector<T>::template check_query<std::string>, conn, msg);
+		                    success = res.get();
+		                    logger_future.get();
+		                    log_prefix = success ? "[OKEY]" : "[ERROR]";
+		                }, msg, std::ref(success), std::ref(log_prefix));
+		            }
 		            break;
+		        }
 		        case 2:
-		        	std::cout << "2" << std::endl;
-		            success = conn->insert(msg);
-		            log_prefix = success ? "[OKEY]" : "[ERROR]";
+		        {
+		            if (replicate_in_database)
+		            {
+		                async_task = std::async(std::launch::async, [&](const std::string& msg, bool& success, std::string& log_prefix) {
+		                    auto logger_future = std::async(std::launch::async, &LOGGER::Logger<L>::add_info_message, logger, "replicate insert query");
+		                    auto res = std::async(std::launch::async, &CONNECTOR::BaseConnector<T>::template insert<std::string>, conn, msg);
+		                    success = res.get();
+		                    logger_future.get();
+		                    log_prefix = success ? "[OKEY]" : "[ERROR]";
+		                }, msg, std::ref(success), std::ref(log_prefix));
+		            }
+		            else
+		            {
+		                async_task = std::async(std::launch::async, [&](const std::string& msg, bool& success, std::string& log_prefix) {
+		                    auto logger_future = std::async(std::launch::async, &LOGGER::Logger<L>::add_info_message, logger, "check insert query");
+		                    auto res           = std::async(std::launch::async, &CONNECTOR::BaseConnector<T>::template check_query<std::string>, conn, msg);
+		                    success = res.get();
+		                    logger_future.get();
+		                    log_prefix = success ? "[OKEY]" : "[ERROR]";
+		                }, msg, std::ref(success), std::ref(log_prefix));
+		            }
 		            break;
+		        }
+		        case 3:
+		        {
+		            if (replicate_in_database)
+		            {
+		                async_task = std::async(std::launch::async, [&](const std::string& msg, bool& success, std::string& log_prefix) {
+		                    auto logger_future = std::async(std::launch::async, &LOGGER::Logger<L>::add_info_message, logger, "replicate delete query");
+		                    auto res           = std::async(std::launch::async, &CONNECTOR::BaseConnector<T>::template remove<std::string>, conn, msg);
+		                    success = res.get();
+		                    logger_future.get();
+		                    log_prefix = success ? "[OKEY]" : "[ERROR]";
+		                }, msg, std::ref(success), std::ref(log_prefix));
+		            }
+		            else
+		            {
+		                async_task = std::async(std::launch::async, [&](const std::string& msg, bool& success, std::string& log_prefix) {
+		                    auto logger_future = std::async(std::launch::async, &LOGGER::Logger<L>::add_info_message, logger, "check delete query");
+		                    auto res           = std::async(std::launch::async, &CONNECTOR::BaseConnector<T>::template check_query<std::string>, conn, msg);
+		                    success = res.get();
+		                    logger_future.get();
+		                    log_prefix = success ? "[OKEY]" : "[ERROR]";
+		                }, msg, std::ref(success), std::ref(log_prefix));
+		            }
+		            break;
+		        }
 		        default:
 		            log_prefix = "[ERROR]";
 		            break;
 		    }
 
-		    if (success) 
-		    {
-		        broker->post_message(json_response);
-		    }
+		    async_task.wait();
 
-		    std::thread log_thread(&LOGGER::Logger<N>::post_message, logger, log_prefix + " " + msg, msg, success);
+		    auto logger_future = std::async(std::launch::async, &LOGGER::Logger<L>::post_message, logger, log_prefix + " " + msg, msg, success);
+		    logger_future.get();
 
-		    if (log_thread.joinable()) 
+		    if (success)
 		    {
-		        log_thread.join();
-		    } 
-		    else 
-		    {
-		        std::cerr << "Ошибка создания потока для логирования" << std::endl;
+		        auto broker_future = std::async(std::launch::async, [](const std::shared_ptr<BROKER::Broker>& broker, const std::string& message){
+		            broker->post_message(message);
+		        }, broker, msg);
+		        broker_future.get();
 		    }
 		}
 
@@ -118,8 +197,9 @@ namespace CONSUMER
 		Consumer(std::shared_ptr<CONNECTOR::BaseConnector<T>>& conn, 
 				 std::shared_ptr<BROKER::Broker>& broker, 
 				 std::shared_ptr<BROKER::Broker>& servbroker, 
-				 std::shared_ptr<LOGGER::Logger<N>>& logger, 
-				 std::string topic)
+				 std::shared_ptr<LOGGER::Logger<L>>& logger, 
+				 std::string topic,
+				 bool replicate_in_database)
 			: config{
 			    {"metadata.broker.list", "localhost:9092"},
 			    {"enable.auto.commit", "false"},
@@ -131,7 +211,8 @@ namespace CONSUMER
 			parser(std::make_unique<PARSER::Parser>()),
 			broker(broker),
 			servbroker(servbroker),
-			conn(conn.get())
+			conn(conn.get()),
+			replicate_in_database(replicate_in_database)
 		{}
 
 	    void parserThread(std::unique_ptr<PARSER::Parser> parser, std::string request)
@@ -154,6 +235,7 @@ namespace CONSUMER
 		            	std::lock_guard<std::mutex> lock(consumer_mutex);
 		                if (msg.get_error()) 
 		                {
+
 		                    std::cout << "[" << "\033[31m" << "Error" << "\033[0m" << "] get kafka message" << std::endl;
 		                }
 		                else 
@@ -161,17 +243,35 @@ namespace CONSUMER
 		                    std::cout << msg.get_payload() << std::endl;
 		                    SUB::Third<json, bool, int> result = parser->Request_parse(msg.get_payload());
 
-		                    if(result.second)
-		                    {
-		                    	delegate_message(result.third, msg.get_payload(), result.first);
-		                    }
-		                }
-		            }
-		        }
+							if (result.second)
+							{
+								auto task = [this, &result, &msg]() {
+									delegate_message(result.third, msg.get_payload(), result.first);
+								};
+								
+
+							    pool.push_back(std::thread(task)); 
+							
+			                }
+			            }
+			        }
+	    		}
 	    	}
 	    	catch (const std::exception& e)
 	    	{
 	    		std::cout << "1: " << e.what() << std::endl;
+	    		logger->add_error_message(e.what());
+	    	}
+	    }
+
+	    ~Consumer()
+	    {
+	    	for(int i = 0; i < pool.size(); ++i)
+	    	{
+	    		if(pool.at(i).joinable())
+	    		{
+	    			pool.at(i).join();
+	    		}
 	    	}
 	    }
 	};

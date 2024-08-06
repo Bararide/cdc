@@ -22,65 +22,97 @@ namespace SQLITECONN
 	
 	bool Sqliteconn::insert(const std::string data)
 	{
-		try
-		{
-			rc = sqlite3_exec(db, data.c_str(), nullptr, nullptr, &errorMsg);
+	    sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, &errorMsg);
 
-			if(rc != SQLITE_OK)
-			{
-				std::cout << "Ошибка при выполнении запроса: " << errorMsg << std::endl;
-				return false;
-			}
+	    try
+	    {
+	        rc = sqlite3_exec(db, data.c_str(), nullptr, nullptr, &errorMsg);
 
-			return true;
-		}
-		catch (const std::exception& e)
-		{
-			std::cout << e.what() << std::endl;
-			return false;
-		}
+	        if(rc != SQLITE_OK)
+	        {
+	            std::cout << "Error executing insert query: " << errorMsg << std::endl;
+	            sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, &errorMsg);
+	            return false;
+	        }
+
+	        sqlite3_exec(db, "COMMIT", nullptr, nullptr, &errorMsg);
+	        return true;
+	    }
+	    catch (const std::exception& e)
+	    {
+	        std::cout << e.what() << std::endl;
+	        sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, &errorMsg);
+	        return false;
+	    }
+	}
+
+	bool Sqliteconn::check_query(const std::string query)
+	{
+	    sqlite3_stmt* stmt;
+	    const char* tail;
+
+	    rc = sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, &tail);
+
+	    if (rc != SQLITE_OK)
+	    {
+	        std::cout << "Error preparing query: " << sqlite3_errmsg(db) << std::endl;
+	        return false;
+	    }
+
+	    sqlite3_finalize(stmt);
+	    return true;
 	}
 
 	bool Sqliteconn::update(const std::string update_query)
 	{
-		try
-		{
-			rc = sqlite3_exec(db, update_query.c_str(), nullptr, nullptr, &errorMsg);
+	    sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, &errorMsg);
 
-			if(rc != SQLITE_OK)
-			{
-				std::cout << "Error: " << errorMsg << std::endl;
-				return false;
-			}
+	    try
+	    {
+	        rc = sqlite3_exec(db, update_query.c_str(), nullptr, nullptr, &errorMsg);
 
-			return true;
-		}
-		catch (const std::exception& e)
-		{
-			std::cout << e.what() << std::endl;
-			return false;
-		}
+	        if(rc != SQLITE_OK)
+	        {
+	            std::cout << "Error executing update query: " << errorMsg << std::endl;
+	            sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, &errorMsg);
+	            return false;
+	        }
+
+	        sqlite3_exec(db, "COMMIT", nullptr, nullptr, &errorMsg);
+	        return true;
+	    }
+	    catch (const std::exception& e)
+	    {
+	        std::cout << e.what() << std::endl;
+	        sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, &errorMsg);
+	        return false;
+	    }
 	}
 
 	bool Sqliteconn::remove(const std::string remove_query)
 	{
-		try
-		{
-			rc = sqlite3_exec(db, remove_query.c_str(), nullptr, nullptr, &errorMsg);
+	    sqlite3_exec(db, "BEGIN TRANSACTION", nullptr, nullptr, &errorMsg);
 
-			if(rc != SQLITE_OK)
-			{
-				std::cout << "Error: " << errorMsg << std::endl;
-				return false;
-			}
+	    try
+	    {
+	        rc = sqlite3_exec(db, remove_query.c_str(), nullptr, nullptr, &errorMsg);
 
-			return true;
-		}
-		catch (const std::exception& e)
-		{
-			std::cout << e.what() << std::endl;
-			return false;
-		}
+	        if(rc != SQLITE_OK)
+	        {
+	            std::cout << "Error executing remove query: " << errorMsg << std::endl;
+	            sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, &errorMsg);
+	            return false;
+	        }
+
+	        sqlite3_exec(db, "COMMIT", nullptr, nullptr, &errorMsg);
+	        return true;
+	    }
+	    catch (const std::exception& e)
+	    {
+	        std::cout << e.what() << std::endl;
+	        sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, &errorMsg);
+	        return false;
+	    }
 	}
 
 	void Sqliteconn::post_logger_message(const std::string& request, bool status)

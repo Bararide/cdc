@@ -17,7 +17,6 @@ namespace CONNECTION
 	{
 	private:
 	    void freeConnection(std::shared_ptr<PGconn> connection);
-
 	    std::mutex connection_mutex;
 
 	public:
@@ -30,6 +29,8 @@ namespace CONNECTION
 
 	    bool insert(const std::string data);
 	    bool update(const std::string data);
+	    bool remove(const std::string query);
+	    bool check_query(const std::string query);
 
 	    void post_logger_message(const std::string& request, bool status);
 

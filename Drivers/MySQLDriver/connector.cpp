@@ -18,7 +18,7 @@ namespace MYSQLCONN
 
 	/*bool Mysqlconn::insert(const std::string& data)
 	{
-	    try
+		try
 	    {
 	        Result add = collection.add(data).execute();
 	        return add.getGeneratedIds().size() > 0;

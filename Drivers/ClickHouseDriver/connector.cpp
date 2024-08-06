@@ -14,6 +14,25 @@ namespace CLICKHOUSECONN
 		}
 	}
 
+bool ClickHouseConn::check_query(const std::string& query)
+{
+    try
+    {
+        client.Execute("SET readonly = 1");
+
+        client.Execute(query);
+
+        client.Execute("SET readonly = 0");
+
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Ошибка при выполнении запроса: " << e.what() << std::endl;
+        return false;
+    }
+}
+
 	bool ClickHouseConn::insert(const std::string& data)
 	{
 		try
