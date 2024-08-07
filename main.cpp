@@ -6,11 +6,6 @@ int main(int argc, char** argv)
 {
     try
     {
-        std::string servprotopic = "servpost";
-        std::string postopic = "post";
-        std::string contopic = "data";
-        std::string logtopic = "log";
-
         opt::options_description desc("All options");
 
         desc.add_options()
@@ -18,15 +13,18 @@ int main(int argc, char** argv)
         	("port,p",        opt::value<int>(), "Port number")
         	("ip",            opt::value<std::string>(), "IP address")
         	("local,l",       "Working on the local machine")
-            ("dbtype",        opt::value<std::string>()->default_value("postgresql"), "postgresql, clickhouse, mysql, sqlite, mongodb")
-            ("dbname",        opt::value<std::string>()->default_value("test"), "Name of you main database")
-            ("logger_dbtype", opt::value<std::string>()->default_value("postgresql"), "postgresql, clickhouse, mysql, sqlite, mongodb")
-            ("logger_dbname", opt::value<std::string>()->default_value("logger"), "Name of your logger database")
-            ("user",          opt::value<std::string>()->default_value("bararide"), "Name of database user")
-            ("password",      opt::value<std::string>()->default_value("0642q"), "Database password")
-            ("hostaddr",      opt::value<std::string>()->default_value("127.0.0.1"), "Host address of database")
-            ("dbport",        opt::value<std::string>()->default_value("5432"), "Port of database")
-            ("include",       opt::value<std::string>()->default_value("yes"), "Copy command in database")
+            ("listen",        opt::value<std::vector<std::string>>(),                  "enter the topics you want to listen to")
+            ("notif",         opt::value<std::vector<std::string>>(),                  "enter the topics that need to be notified")
+            ("logtopic",      opt::value<std::vector<std::string>>(),                  "enter the topics which you need to log")
+            ("dbtype",        opt::value<std::string>()->default_value("postgresql"),  "postgresql, clickhouse, mysql, sqlite, mongodb")
+            ("dbname",        opt::value<std::string>()->default_value("test"),        "Name of you main database")
+            ("logger_dbtype", opt::value<std::string>()->default_value("postgresql"),  "postgresql, clickhouse, mysql, sqlite, mongodb")
+            ("logger_dbname", opt::value<std::string>()->default_value("logger"),      "Name of your logger database")
+            ("user",          opt::value<std::string>()->default_value("bararide"),    "Name of database user")
+            ("password",      opt::value<std::string>()->default_value("0642q"),       "Database password")
+            ("hostaddr",      opt::value<std::string>()->default_value("127.0.0.1"),   "Host address of database")
+            ("dbport",        opt::value<std::string>()->default_value("5432"),        "Port of database")
+            ("include",       opt::value<std::string>()->default_value("yes"),         "Copy command in database")
             ("logpath",       opt::value<std::string>()->default_value("logging.log"), "Path to log file")
             ("help",          "print all commands");
 
@@ -45,7 +43,22 @@ int main(int argc, char** argv)
             {
             	if(vm["logger_dbtype"].as<std::string>() == "postgresql" && vm["dbtype"].as<std::string>() == "postgresql")
             	{
-        			std::unique_ptr<MANAGER::Manager<CONNECTION::PGConnection, CONNECTION::PGConnection>> manager = std::make_unique<MANAGER::Manager<CONNECTION::PGConnection, CONNECTION::PGConnection>>(postopic, logtopic, servprotopic, contopic);
+                    std::unique_ptr<MANAGER::Manager<CONNECTION::PGConnection, CONNECTION::PGConnection>> manager = 
+                        std::make_unique<MANAGER::Manager<CONNECTION::PGConnection, CONNECTION::PGConnection>>();
+
+                    if(vm.count("listen") && vm.count("notif") && vm.count("logtopic") && !vm.count("network"))
+                    {
+                        manager->add_brokers(
+                                vm["listen"].as<std::vector<std::string>>(), 
+                                vm["notif"].as<std::vector<std::string>>(), 
+                                vm["logtopic"].as<std::vector<std::string>>()
+                            );
+                    }
+                    else if((vm.count("listen") && vm.count("notif") && vm.count("logtopic")) && !vm.count("network"))
+                    {
+                        std::cout << "No topics specified" << std::endl;
+                        return 1;
+                    }
 
                     if(vm["include"].as<std::string>() == "yes")
                     {
@@ -107,7 +120,22 @@ int main(int argc, char** argv)
                 }
                 else if(vm["logger_dbtype"].as<std::string>() == "postgresql" && vm["dbtype"].as<std::string>() == "sqlite")
                 {
-        			std::unique_ptr<MANAGER::Manager<CONNECTION::PGConnection, SQLITECONN::Sqliteconn>> manager = std::make_unique<MANAGER::Manager<CONNECTION::PGConnection, SQLITECONN::Sqliteconn>>(postopic, logtopic, servprotopic, contopic);
+        			std::unique_ptr<MANAGER::Manager<CONNECTION::PGConnection, SQLITECONN::Sqliteconn>> manager = 
+                        std::make_unique<MANAGER::Manager<CONNECTION::PGConnection, SQLITECONN::Sqliteconn>>();
+
+                    if(vm.count("listen") && vm.count("notif") && vm.count("logtopic") && !vm.count("network"))
+                    {
+                        manager->add_brokers(
+                                vm["listen"].as<std::vector<std::string>>(), 
+                                vm["notif"].as<std::vector<std::string>>(), 
+                                vm["logtopic"].as<std::vector<std::string>>()
+                            );
+                    }
+                    else if((vm.count("listen") && vm.count("notif") && vm.count("logtopic")) && !vm.count("network"))
+                    {
+                        std::cout << "No topics specified" << std::endl;
+                        return 1;
+                    }
 
                     if(vm["include"].as<std::string>() == "yes")
                     {
@@ -160,7 +188,22 @@ int main(int argc, char** argv)
                 }
 	            else if(vm["logger_dbtype"].as<std::string>() == "postgresql" && vm["dbtype"].as<std::string>() == "clickhouse")
 	            {
-	    			std::unique_ptr<MANAGER::Manager<CONNECTION::PGConnection, CLICKHOUSECONN::ClickHouseConn>> manager = std::make_unique<MANAGER::Manager<CONNECTION::PGConnection, CLICKHOUSECONN::ClickHouseConn>>(postopic, logtopic, servprotopic, contopic);
+	    			std::unique_ptr<MANAGER::Manager<CONNECTION::PGConnection, CLICKHOUSECONN::ClickHouseConn>> manager = 
+                        std::make_unique<MANAGER::Manager<CONNECTION::PGConnection, CLICKHOUSECONN::ClickHouseConn>>();
+
+                    if(vm.count("listen") && vm.count("notif") && vm.count("logtopic"))
+                    {
+                        manager->add_brokers(
+                                vm["listen"].as<std::vector<std::string>>(), 
+                                vm["notif"].as<std::vector<std::string>>(), 
+                                vm["logtopic"].as<std::vector<std::string>>()
+                            );
+                    }
+                    else if((vm.count("listen") && vm.count("notif") && vm.count("logtopic")) && !vm.count("network"))
+                    {
+                        std::cout << "No topics specified" << std::endl;
+                        return 1;
+                    }
 
                     if(vm["include"].as<std::string>() == "yes")
                     {

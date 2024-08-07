@@ -29,7 +29,7 @@ namespace LOGGER
 		quill::Logger* logger;
 
 		std::shared_ptr<quill::Sink> file_sink;
-		std::shared_ptr<BROKER::Broker> broker;
+		std::vector<std::shared_ptr<BROKER::Broker>> brokers;
 		std::shared_ptr<CONNECTOR::BaseConnector<T>> conn;
 
 		bool is_network = false;
@@ -59,10 +59,14 @@ namespace LOGGER
 		}
 
 	public:
-		Logger(std::shared_ptr<BROKER::Broker> broker, std::shared_ptr<CONNECTOR::BaseConnector<T>> conn, const std::string logpath) : 
-			broker(broker),
+		Logger(const std::vector<std::string>& brokers, std::shared_ptr<CONNECTOR::BaseConnector<T>> conn, const std::string logpath) : 
 			conn(conn)
 		{
+			for(auto v : brokers)
+			{
+				this->brokers.push_back(std::make_shared<BROKER::Broker>(v));
+			}
+
 			is_network = false;
 			create_quill_logger(logpath);
 		};
@@ -100,7 +104,10 @@ namespace LOGGER
 
 		    if(!is_network)
 		    {
-		    	this->broker->post_message(message);
+		    	for(auto v : this->brokers)
+		    	{
+		    		v->post_message(message);
+		    	}
 		    }
 		    
 		    this->conn->post_logger_message(request, status);

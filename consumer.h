@@ -37,8 +37,7 @@ namespace CONSUMER
 		std::unique_ptr<PARSER::Parser> parser;
 		std::shared_ptr<CONNECTOR::BaseConnector<T>> conn;
 		std::shared_ptr<LOGGER::Logger<L>> logger;
-		std::shared_ptr<BROKER::Broker> broker;
-		std::shared_ptr<BROKER::Broker> servbroker;
+		std::vector<std::shared_ptr<BROKER::Broker>> brokers;
 
         std::map<std::string, json (*)(const std::vector<std::string>, json&)> vecops {
             {"COLUMNS", [](std::vector<std::string> words, json& response) {
@@ -81,7 +80,10 @@ namespace CONSUMER
 
 		                        std::cout << response.dump(4) << std::endl;
 
-		                        broker->post_message(response);
+		                        for(auto broker : brokers)
+		                        {
+		                        	broker->post_message(response);
+		                        }
 		                    }
 		                    else
 		                    {
@@ -184,21 +186,30 @@ namespace CONSUMER
 		    auto logger_future = std::async(std::launch::async, &LOGGER::Logger<L>::post_message, logger, log_prefix + " " + msg, msg, success);
 		    logger_future.get();
 
-		    if (success)
-		    {
-		        auto broker_future = std::async(std::launch::async, [](const std::shared_ptr<BROKER::Broker>& broker, const std::string& message){
-		            broker->post_message(message);
-		        }, broker, msg);
-		        broker_future.get();
-		    }
+			if (success)
+			{
+			    std::vector<std::future<void>> brokerFutures;
+			    for (auto broker : brokers) 
+			   	{
+			        brokerFutures.push_back(
+			            std::async(std::launch::async, [](const std::shared_ptr<BROKER::Broker>& broker, const std::string& message) {
+			                broker->post_message(message);
+			            }, broker, msg)
+			        );
+			    }
+
+			    for (auto& future : brokerFutures) 
+			    {
+			        future.get();
+			    }
+			}
 		}
 
 	public:
-		Consumer(std::shared_ptr<CONNECTOR::BaseConnector<T>>& conn, 
-				 std::shared_ptr<BROKER::Broker>& broker, 
-				 std::shared_ptr<BROKER::Broker>& servbroker, 
-				 std::shared_ptr<LOGGER::Logger<L>>& logger, 
-				 std::string topic,
+		Consumer(const std::shared_ptr<CONNECTOR::BaseConnector<T>>& conn, 
+				 const std::shared_ptr<LOGGER::Logger<L>>& logger, 
+				 const std::vector<std::string>& broker_topics,
+				 const std::string& topic,
 				 bool replicate_in_database)
 			: config{
 			    {"metadata.broker.list", "localhost:9092"},
@@ -209,11 +220,14 @@ namespace CONSUMER
 			topic(topic),
 			logger(logger),
 			parser(std::make_unique<PARSER::Parser>()),
-			broker(broker),
-			servbroker(servbroker),
 			conn(conn.get()),
 			replicate_in_database(replicate_in_database)
-		{}
+		{
+			for (const auto& broker_topic : broker_topics)
+			{
+				brokers.push_back(std::make_shared<BROKER::Broker>(broker_topic));
+			}
+		}
 
 	    void parserThread(std::unique_ptr<PARSER::Parser> parser, std::string request)
 		{

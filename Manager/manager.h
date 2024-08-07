@@ -29,8 +29,14 @@ namespace MANAGER
         std::shared_ptr<CONNECTOR::BaseConnector<L>> logdb;
         std::shared_ptr<CONNECTOR::BaseConnector<N>> conn;
 
+        std::vector<std::unique_ptr<CONSUMER::Consumer<N, L>>> consumers;
+
         std::unique_ptr<CONSUMER::Consumer<N, L>> consumer;
         std::unique_ptr<NETWORK::Server<N, L>> server;
+
+        std::vector<std::string> brokers;
+        std::vector<std::string> logtopics;
+        std::vector<std::string> listen;
 
         template<typename T, typename U>
         void consumerThread(std::unique_ptr<CONSUMER::Consumer<T, U>> consumer)
@@ -40,13 +46,20 @@ namespace MANAGER
 
     public:
         std::shared_ptr<LOGGER::Logger<L>> logger;
-        
-        Manager(std::string broker_topic, std::string log_topic, std::string serv_topic, std::string contopic) :
-            broker(std::make_shared<BROKER::Broker>(broker_topic)),
-            logbroker(std::make_shared<BROKER::Broker>(log_topic)),
-            servbroker(std::make_shared<BROKER::Broker>(serv_topic)),
-            contopic(contopic)
-        {}
+
+        void add_brokers(const std::vector<std::string>& listen, const std::vector<std::string>& notif, const std::vector<std::string>& logtopics)
+        {
+            try
+            {
+                this->brokers = notif;
+                this->logtopics = logtopics;
+                this->listen = listen;
+            }
+            catch (const std::exception& e)
+            {
+                std::cout << e.what() << std::endl;
+            }
+        }
 
         void create_logger(std::string& config, const std::string& logpath, std::shared_ptr<CONNECTOR::BaseConnector<L>> logdb, bool is_network)
         {
@@ -60,7 +73,7 @@ namespace MANAGER
                 }
                 else
                 {
-                    logger = std::make_shared<LOGGER::Logger<L>>(logbroker, this->logdb, logpath);
+                    logger = std::make_shared<LOGGER::Logger<L>>(logtopics, this->logdb, logpath);
                 }
                 
                 logger->add_success_message("Created logger");
@@ -94,13 +107,36 @@ namespace MANAGER
         {
             try
             {
-                consumer = std::make_unique<CONSUMER::Consumer<N, L>>(std::ref(this->conn), std::ref(this->broker), std::ref(this->servbroker), std::ref(this->logger), std::move(this->contopic), replicate_in_database);
+                std::vector<std::future<void>> consumerFutures;
+                for (auto v : listen)
+                {
+                    consumerFutures.push_back(
+                        std::async(std::launch::async, [this, v]() {
+                            auto consumer = std::make_unique<CONSUMER::Consumer<N, L>>(conn, logger, brokers, v, replicate_in_database);
+                            consumers.push_back(std::move(consumer));
+                            logger->add_success_message("Created consumer");
+                        })
+                    );
+                }
 
-                std::future<void> consumerFuture = std::async(std::launch::async, &Manager::consumerThread<N, L>, this, std::move(this->consumer));
+                for (auto& future : consumerFutures)
+                {
+                    future.get();
+                }
 
-                logger->add_success_message("Created consumer");
+                for (auto& consumer : consumers)
+                {
+                    auto future = std::async(std::launch::async, &Manager::consumerThread<N, L>, this, std::move(consumer));
 
-                consumerFuture.get();
+                    try
+                    {
+                        future.get();
+                    }
+                    catch (const std::exception& e)
+                    {
+                        logger->add_error_message(e.what());
+                    }
+                }
             }
             catch (const std::exception& e)
             {
